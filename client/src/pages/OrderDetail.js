@@ -2,30 +2,47 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useAuth } from '../contexts/AuthContext';
-import { useForm } from 'react-hook-form';
+import { useSocket } from '../contexts/SocketContext';
 import axios from 'axios';
-import { FaStar, FaClock, FaUser, FaMessage, FaCheck, FaTimes } from 'react-icons/fa';
+import { format } from 'date-fns';
+import { 
+  FaClock, 
+  FaCheckCircle, 
+  FaTimesCircle, 
+  FaExclamationTriangle,
+  FaCreditCard,
+  FaComments,
+  FaFileAlt,
+  FaDownload,
+  FaStar,
+  FaFlag
+} from 'react-icons/fa';
+import toast from 'react-hot-toast';
+
+// Components
+import ChatRoom from '../components/Messaging/ChatRoom';
+import PaymentForm from '../components/Payment/PaymentForm';
+import DisputeForm from '../components/Disputes/DisputeForm';
+import FileUpload from '../components/Upload/FileUpload';
 
 const OrderDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, isClient } = useAuth();
-  const [showRatingModal, setShowRatingModal] = useState(false);
+  const { user } = useAuth();
+  const { isConnected } = useSocket();
   const queryClient = useQueryClient();
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-    reset
-  } = useForm();
+  
+  const [activeTab, setActiveTab] = useState('details');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showDisputeModal, setShowDisputeModal] = useState(false);
+  const [showFileUpload, setShowFileUpload] = useState(false);
 
   // Fetch order details
-  const { data: orderData, isLoading, error } = useQuery(
+  const { data: order, isLoading, error } = useQuery(
     ['order', id],
     () => axios.get(`/api/orders/${id}`).then(res => res.data),
     {
-      staleTime: 5 * 60 * 1000,
+      refetchInterval: 10000, // Poll every 10 seconds
     }
   );
 
@@ -36,17 +53,10 @@ const OrderDetail = () => {
       onSuccess: () => {
         queryClient.invalidateQueries(['order', id]);
         queryClient.invalidateQueries(['my-orders']);
-      }
-    }
-  );
-
-  // Add message mutation
-  const addMessageMutation = useMutation(
-    (message) => axios.post(`/api/orders/${id}/messages`, { message }),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries(['order', id]);
-        reset();
+        toast.success('Order status updated successfully');
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.message || 'Failed to update order status');
       }
     }
   );
@@ -57,225 +67,327 @@ const OrderDetail = () => {
     {
       onSuccess: () => {
         queryClient.invalidateQueries(['order', id]);
-        setShowRatingModal(false);
+        toast.success('Rating submitted successfully');
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.message || 'Failed to submit rating');
       }
     }
   );
 
-  const order = orderData?.order;
+  // File upload mutation
+  const uploadFileMutation = useMutation(
+    (file) => {
+      const formData = new FormData();
+      formData.append('document', file);
+      return axios.post('/api/upload/document', formData);
+    },
+    {
+      onSuccess: (data) => {
+        toast.success('File uploaded successfully');
+        queryClient.invalidateQueries(['order', id]);
+      },
+      onError: (error) => {
+        toast.error('Failed to upload file');
+      }
+    }
+  );
 
   const getStatusBadge = (status) => {
     const statusConfig = {
-      pending: { class: 'badge-warning', text: 'Pending' },
-      'in-progress': { class: 'badge-info', text: 'In Progress' },
-      completed: { class: 'badge-success', text: 'Completed' },
-      cancelled: { class: 'badge-error', text: 'Cancelled' },
-      disputed: { class: 'badge-error', text: 'Disputed' }
+      pending: { class: 'bg-yellow-100 text-yellow-800', icon: FaClock, text: 'Pending' },
+      'in-progress': { class: 'bg-blue-100 text-blue-800', icon: FaClock, text: 'In Progress' },
+      completed: { class: 'bg-green-100 text-green-800', icon: FaCheckCircle, text: 'Completed' },
+      cancelled: { class: 'bg-red-100 text-red-800', icon: FaTimesCircle, text: 'Cancelled' },
+      disputed: { class: 'bg-orange-100 text-orange-800', icon: FaExclamationTriangle, text: 'Disputed' }
     };
     
-    const config = statusConfig[status] || { class: 'badge-info', text: status };
-    return <span className={`badge ${config.class}`}>{config.text}</span>;
-  };
-
-  const onSubmitMessage = async (data) => {
-    addMessageMutation.mutate(data.message);
-  };
-
-  const onSubmitRating = async (data) => {
-    rateOrderMutation.mutate({
-      score: parseInt(data.score),
-      review: data.review
-    });
-  };
-
-  const canUpdateStatus = () => {
-    if (!order) return false;
+    const config = statusConfig[status] || { class: 'bg-gray-100 text-gray-800', icon: FaClock, text: status };
+    const Icon = config.icon;
     
-    const isClientUser = isClient && order.client._id === user._id;
-    const isFreelancerUser = !isClient && order.freelancer._id === user._id;
-    
-    if (order.status === 'pending') {
-      return isFreelancerUser; // Only freelancer can start work
-    } else if (order.status === 'in-progress') {
-      return isFreelancerUser; // Only freelancer can complete
-    }
-    
-    return false;
+    return (
+      <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${config.class}`}>
+        <Icon className="w-4 h-4 mr-2" />
+        {config.text}
+      </span>
+    );
   };
 
-  const canRate = () => {
-    return isClient && 
-           order?.status === 'completed' && 
-           order?.client._id === user._id && 
-           !order?.rating?.score;
-  };
+  const isClient = order?.client?._id === user?._id;
+  const isFreelancer = order?.freelancer?._id === user?._id;
+  const canRate = isClient && order?.status === 'completed' && !order?.rating;
+  const canUpdateStatus = isFreelancer && ['pending', 'in-progress'].includes(order?.status);
+  const canPay = isClient && order?.status === 'pending';
+  const canDispute = ['pending', 'in-progress', 'completed'].includes(order?.status);
 
   if (isLoading) {
     return (
-      <div className="max-w-4xl mx-auto">
-        <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded mb-4"></div>
-          <div className="h-4 bg-gray-200 rounded mb-8"></div>
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="md:col-span-2">
-              <div className="h-64 bg-gray-200 rounded mb-6"></div>
-              <div className="h-32 bg-gray-200 rounded"></div>
-            </div>
-            <div>
-              <div className="h-32 bg-gray-200 rounded"></div>
-            </div>
-          </div>
-        </div>
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+        <span className="ml-2">Loading order details...</span>
       </div>
     );
   }
 
-  if (error || !order) {
+  if (error) {
     return (
-      <div className="max-w-4xl mx-auto text-center py-12">
-        <p className="text-red-600">Error loading order. Please try again.</p>
+      <div className="text-center p-8">
+        <p className="text-red-600">Failed to load order details</p>
+        <button
+          onClick={() => navigate('/dashboard')}
+          className="mt-4 px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+        >
+          Back to Dashboard
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-6xl mx-auto">
       {/* Header */}
-      <div className="mb-8">
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">{order.gig.title}</h1>
-            <div className="flex items-center space-x-4 text-gray-600">
-              <span>Order #{order._id.slice(-8)}</span>
+      <div className="bg-white rounded-lg shadow mb-6">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                Order #{order._id.slice(-8)}
+              </h1>
+              <p className="text-gray-600">{order.gig?.title}</p>
+            </div>
+            <div className="flex items-center space-x-4">
               {getStatusBadge(order.status)}
-              <span>${order.amount}</span>
+              <div className="flex items-center space-x-2">
+                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                <span className="text-sm text-gray-600">
+                  {isConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
             </div>
           </div>
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="btn btn-outline"
-          >
-            Back to Dashboard
-          </button>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="px-6 py-4 bg-gray-50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => setActiveTab('details')}
+                className={`px-4 py-2 rounded-md font-medium ${
+                  activeTab === 'details'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                Details
+              </button>
+              <button
+                onClick={() => setActiveTab('messages')}
+                className={`px-4 py-2 rounded-md font-medium ${
+                  activeTab === 'messages'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                Messages
+              </button>
+              <button
+                onClick={() => setActiveTab('files')}
+                className={`px-4 py-2 rounded-md font-medium ${
+                  activeTab === 'files'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                Files
+              </button>
+            </div>
+
+            <div className="flex items-center space-x-3">
+              {canPay && (
+                <button
+                  onClick={() => setShowPaymentModal(true)}
+                  className="flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                >
+                  <FaCreditCard className="w-4 h-4 mr-2" />
+                  Pay Now
+                </button>
+              )}
+
+              {canUpdateStatus && (
+                <select
+                  onChange={(e) => updateStatusMutation.mutate(e.target.value)}
+                  className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">Update Status</option>
+                  <option value="in-progress">Mark as In Progress</option>
+                  <option value="completed">Mark as Completed</option>
+                </select>
+              )}
+
+              {canDispute && (
+                <button
+                  onClick={() => setShowDisputeModal(true)}
+                  className="flex items-center px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700"
+                >
+                  <FaFlag className="w-4 h-4 mr-2" />
+                  Dispute
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-8">
+      {/* Content Tabs */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}
-        <div className="md:col-span-2 space-y-6">
-          {/* Order Details */}
-          <div className="card p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Order Details</h2>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Requirements</label>
-                <p className="text-gray-900 mt-1 whitespace-pre-wrap">{order.requirements}</p>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-4">
+        <div className="lg:col-span-2">
+          {activeTab === 'details' && (
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Order Details</h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Order Date</label>
-                  <p className="text-gray-900 mt-1">
-                    {new Date(order.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Delivery Date</label>
-                  <p className="text-gray-900 mt-1">
-                    {new Date(order.deliveryDate).toLocaleDateString()}
-                  </p>
-                </div>
-              </div>
-
-              {order.completedDate && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Completed Date</label>
-                  <p className="text-gray-900 mt-1">
-                    {new Date(order.completedDate).toLocaleDateString()}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Messages */}
-          <div className="card p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Messages</h2>
-            
-            <div className="space-y-4 mb-6">
-              {order.messages && order.messages.length > 0 ? (
-                order.messages.map((message, index) => (
-                  <div key={index} className="flex space-x-3">
-                    <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <FaUser className="w-4 h-4 text-primary-600" />
+                  <h3 className="font-medium text-gray-900 mb-2">Gig Information</h3>
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <span className="text-gray-600">Title:</span>
+                      <p className="font-medium">{order.gig?.title}</p>
                     </div>
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <span className="font-medium text-gray-900">
-                          {message.sender.username}
-                        </span>
-                        <span className="text-sm text-gray-500">
-                          {new Date(message.createdAt).toLocaleString()}
-                        </span>
-                      </div>
-                      <p className="text-gray-700">{message.message}</p>
+                    <div>
+                      <span className="text-gray-600">Category:</span>
+                      <p className="font-medium capitalize">{order.gig?.category}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Price:</span>
+                      <p className="font-medium">${order.amount}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Delivery Time:</span>
+                      <p className="font-medium">{order.gig?.deliveryTime} days</p>
                     </div>
                   </div>
-                ))
-              ) : (
-                <p className="text-gray-500">No messages yet.</p>
+                </div>
+
+                <div>
+                  <h3 className="font-medium text-gray-900 mb-2">Order Information</h3>
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <span className="text-gray-600">Order Date:</span>
+                      <p className="font-medium">{format(new Date(order.createdAt), 'MMM dd, yyyy')}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Delivery Date:</span>
+                      <p className="font-medium">{format(new Date(order.deliveryDate), 'MMM dd, yyyy')}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Status:</span>
+                      <div className="mt-1">{getStatusBadge(order.status)}</div>
+                    </div>
+                    {order.completedDate && (
+                      <div>
+                        <span className="text-gray-600">Completed Date:</span>
+                        <p className="font-medium">{format(new Date(order.completedDate), 'MMM dd, yyyy')}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Requirements */}
+              <div className="mt-6">
+                <h3 className="font-medium text-gray-900 mb-2">Requirements</h3>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-700">{order.requirements}</p>
+                </div>
+              </div>
+
+              {/* Rating Section */}
+              {canRate && (
+                <div className="mt-6">
+                  <h3 className="font-medium text-gray-900 mb-2">Rate this Order</h3>
+                  <div className="flex items-center space-x-4">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        onClick={() => rateOrderMutation.mutate({ rating: star, review: '' })}
+                        className="text-2xl text-yellow-400 hover:text-yellow-500"
+                      >
+                        <FaStar />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Existing Rating */}
+              {order.rating && (
+                <div className="mt-6">
+                  <h3 className="font-medium text-gray-900 mb-2">Rating</h3>
+                  <div className="flex items-center space-x-2">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <FaStar
+                        key={star}
+                        className={`w-5 h-5 ${
+                          star <= order.rating ? 'text-yellow-400' : 'text-gray-300'
+                        }`}
+                      />
+                    ))}
+                    <span className="text-sm text-gray-600">({order.rating}/5)</span>
+                  </div>
+                </div>
               )}
             </div>
+          )}
 
-            {/* Add Message */}
-            <form onSubmit={handleSubmit(onSubmitMessage)} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Send Message
-                </label>
-                <textarea
-                  {...register('message', {
-                    required: 'Message is required',
-                    minLength: { value: 1, message: 'Message cannot be empty' }
-                  })}
-                  rows={3}
-                  className={`input ${errors.message ? 'border-red-500' : ''}`}
-                  placeholder="Type your message..."
-                />
-                {errors.message && (
-                  <p className="mt-1 text-sm text-red-600">{errors.message.message}</p>
-                )}
+          {activeTab === 'messages' && (
+            <div className="bg-white rounded-lg shadow">
+              <ChatRoom orderId={id} />
+            </div>
+          )}
+
+          {activeTab === 'files' && (
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-gray-900">Files & Deliverables</h2>
+                <button
+                  onClick={() => setShowFileUpload(true)}
+                  className="flex items-center px-3 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+                >
+                  <FaFileAlt className="w-4 h-4 mr-2" />
+                  Upload File
+                </button>
               </div>
-              <button
-                type="submit"
-                disabled={addMessageMutation.isLoading}
-                className="btn btn-primary"
-              >
-                {addMessageMutation.isLoading ? 'Sending...' : 'Send Message'}
-              </button>
-            </form>
-          </div>
 
-          {/* Rating */}
-          {order.rating && order.rating.score && (
-            <div className="card p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Rating</h2>
-              <div className="flex items-center space-x-2 mb-2">
-                <div className="flex">
-                  {[...Array(5)].map((_, i) => (
-                    <FaStar
-                      key={i}
-                      className={`w-5 h-5 ${
-                        i < order.rating.score ? 'text-yellow-400' : 'text-gray-300'
-                      }`}
-                    />
+              {order.deliverables && order.deliverables.length > 0 ? (
+                <div className="space-y-3">
+                  {order.deliverables.map((file, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center space-x-3">
+                        <FaFileAlt className="w-5 h-5 text-gray-400" />
+                        <div>
+                          <p className="font-medium text-gray-900">{file.fileName}</p>
+                          <p className="text-sm text-gray-600">{file.fileSize}</p>
+                        </div>
+                      </div>
+                      <a
+                        href={file.fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center text-primary-600 hover:text-primary-700"
+                      >
+                        <FaDownload className="w-4 h-4 mr-1" />
+                        Download
+                      </a>
+                    </div>
                   ))}
                 </div>
-                <span className="text-gray-900">{order.rating.score}/5</span>
-              </div>
-              {order.rating.review && (
-                <p className="text-gray-700">{order.rating.review}</p>
+              ) : (
+                <div className="text-center py-8">
+                  <FaFileAlt className="mx-auto w-12 h-12 text-gray-400 mb-4" />
+                  <p className="text-gray-600">No files uploaded yet</p>
+                </div>
               )}
             </div>
           )}
@@ -283,168 +395,130 @@ const OrderDetail = () => {
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* Status Card */}
-          <div className="card p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Order Status</h3>
-            
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-gray-600">Current Status</span>
-                {getStatusBadge(order.status)}
-              </div>
-
-              {canUpdateStatus() && (
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">
-                    Update Status
-                  </label>
-                  <div className="flex space-x-2">
-                    {order.status === 'pending' && (
-                      <button
-                        onClick={() => updateStatusMutation.mutate('in-progress')}
-                        disabled={updateStatusMutation.isLoading}
-                        className="btn btn-primary flex-1"
-                      >
-                        Start Work
-                      </button>
-                    )}
-                    {order.status === 'in-progress' && (
-                      <button
-                        onClick={() => updateStatusMutation.mutate('completed')}
-                        disabled={updateStatusMutation.isLoading}
-                        className="btn btn-success flex-1"
-                      >
-                        Mark Complete
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {canRate() && (
-                <button
-                  onClick={() => setShowRatingModal(true)}
-                  className="btn btn-primary w-full"
-                >
-                  Rate Order
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* User Info */}
-          <div className="card p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              {isClient ? 'Freelancer' : 'Client'}
+          {/* User Information */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="font-semibold text-gray-900 mb-4">
+              {isClient ? 'Freelancer' : 'Client'} Information
             </h3>
-            <div className="flex items-center mb-4">
-              <div className="w-12 h-12 bg-primary-100 rounded-full flex items-center justify-center mr-3">
-                <FaUser className="w-6 h-6 text-primary-600" />
-              </div>
+            <div className="flex items-center space-x-3 mb-4">
+              <img
+                src={isClient ? order.freelancer?.profile?.avatar : order.client?.profile?.avatar}
+                alt="Avatar"
+                className="w-12 h-12 rounded-full"
+              />
               <div>
                 <p className="font-medium text-gray-900">
-                  {isClient ? order.freelancer.username : order.client.username}
+                  {isClient 
+                    ? `${order.freelancer?.profile?.firstName} ${order.freelancer?.profile?.lastName}`
+                    : `${order.client?.profile?.firstName} ${order.client?.profile?.lastName}`
+                  }
                 </p>
                 <p className="text-sm text-gray-600">
-                  {isClient 
-                    ? order.freelancer.profile?.location || 'Location not specified'
-                    : order.client.profile?.location || 'Location not specified'
-                  }
+                  {isClient ? order.freelancer?.username : order.client?.username}
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => navigate(`/users/${isClient ? order.freelancer._id : order.client._id}`)}
-              className="btn btn-outline w-full"
-            >
-              View Profile
-            </button>
+            <div className="space-y-2 text-sm">
+              <div>
+                <span className="text-gray-600">Rating:</span>
+                <div className="flex items-center space-x-1 mt-1">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <FaStar
+                      key={star}
+                      className={`w-4 h-4 ${
+                        star <= (isClient ? order.freelancer?.rating?.average : order.client?.rating?.average)
+                          ? 'text-yellow-400'
+                          : 'text-gray-300'
+                      }`}
+                    />
+                  ))}
+                  <span className="text-gray-600 ml-1">
+                    ({isClient ? order.freelancer?.rating?.average : order.client?.rating?.average}/5)
+                  </span>
+                </div>
+              </div>
+              <div>
+                <span className="text-gray-600">Location:</span>
+                <p className="font-medium">
+                  {isClient ? order.freelancer?.profile?.location : order.client?.profile?.location}
+                </p>
+              </div>
+            </div>
           </div>
 
-          {/* Gig Info */}
-          <div className="card p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Gig Information</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Gig Title</label>
-                <p className="text-gray-900 text-sm">{order.gig.title}</p>
+          {/* Payment Information */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="font-semibold text-gray-900 mb-4">Payment Information</h3>
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Order Amount:</span>
+                <span className="font-medium">${order.amount}</span>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Price</label>
-                <p className="text-gray-900">${order.gig.price}</p>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Platform Fee (10%):</span>
+                <span className="font-medium">${(order.amount * 0.1).toFixed(2)}</span>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Delivery Time</label>
-                <p className="text-gray-900">{order.gig.deliveryTime} days</p>
+              <div className="border-t pt-3 flex justify-between font-semibold">
+                <span>Total:</span>
+                <span>${(order.amount * 1.1).toFixed(2)}</span>
               </div>
-              <button
-                onClick={() => navigate(`/gigs/${order.gig._id}`)}
-                className="btn btn-outline w-full"
-              >
-                View Gig
-              </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Rating Modal */}
-      {showRatingModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Rate This Order</h2>
-            
-            <form onSubmit={handleSubmit(onSubmitRating)} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Rating *
-                </label>
-                <select
-                  {...register('score', { required: 'Rating is required' })}
-                  className={`input ${errors.score ? 'border-red-500' : ''}`}
-                >
-                  <option value="">Select rating</option>
-                  <option value="5">5 - Excellent</option>
-                  <option value="4">4 - Very Good</option>
-                  <option value="3">3 - Good</option>
-                  <option value="2">2 - Fair</option>
-                  <option value="1">1 - Poor</option>
-                </select>
-                {errors.score && (
-                  <p className="mt-1 text-sm text-red-600">{errors.score.message}</p>
-                )}
-              </div>
+      {/* Modals */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg max-w-md w-full mx-4">
+            <PaymentForm
+              order={order}
+              onSuccess={() => {
+                setShowPaymentModal(false);
+                queryClient.invalidateQueries(['order', id]);
+              }}
+              onCancel={() => setShowPaymentModal(false)}
+            />
+          </div>
+        </div>
+      )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Review (Optional)
-                </label>
-                <textarea
-                  {...register('review')}
-                  rows={3}
-                  className="input"
-                  placeholder="Share your experience..."
-                  maxLength={1000}
-                />
-              </div>
+      {showDisputeModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full">
+            <DisputeForm
+              order={order}
+              onSuccess={() => {
+                setShowDisputeModal(false);
+                queryClient.invalidateQueries(['order', id]);
+              }}
+              onCancel={() => setShowDisputeModal(false)}
+            />
+          </div>
+        </div>
+      )}
 
-              <div className="flex space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setShowRatingModal(false)}
-                  className="btn btn-outline flex-1"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={rateOrderMutation.isLoading}
-                  className="btn btn-primary flex-1"
-                >
-                  {rateOrderMutation.isLoading ? 'Submitting...' : 'Submit Rating'}
-                </button>
-              </div>
-            </form>
+      {showFileUpload && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Upload Files</h3>
+              <button
+                onClick={() => setShowFileUpload(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FaTimesCircle className="w-6 h-6" />
+              </button>
+            </div>
+            <FileUpload
+              type="document"
+              multiple={true}
+              maxFiles={10}
+              onUploadSuccess={(files) => {
+                setShowFileUpload(false);
+                queryClient.invalidateQueries(['order', id]);
+              }}
+            />
           </div>
         </div>
       )}

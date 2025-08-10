@@ -5,11 +5,13 @@ const gigSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true,
+    minlength: 5,
     maxlength: 100
   },
   description: {
     type: String,
     required: true,
+    minlength: 20,
     maxlength: 2000
   },
   category: {
@@ -19,7 +21,9 @@ const gigSchema = new mongoose.Schema({
   },
   subcategory: {
     type: String,
-    required: true
+    required: true,
+    trim: true,
+    maxlength: 50
   },
   price: {
     type: Number,
@@ -29,29 +33,43 @@ const gigSchema = new mongoose.Schema({
   deliveryTime: {
     type: Number,
     required: true,
-    min: 1
+    min: 1,
+    max: 365 // Maximum 1 year
   },
   revisions: {
     type: Number,
-    default: 0
+    default: 0,
+    min: 0,
+    max: 10
   },
   features: [{
-    name: String,
-    included: { type: Boolean, default: true }
+    name: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    included: {
+      type: Boolean,
+      default: true
+    }
+  }],
+  tags: [{
+    type: String,
+    trim: true,
+    maxlength: 20
   }],
   images: [{
     url: String,
-    alt: String
+    alt: String,
+    isMain: {
+      type: Boolean,
+      default: false
+    }
   }],
-  tags: [String],
   freelancer: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
-  },
-  rating: {
-    average: { type: Number, default: 0 },
-    count: { type: Number, default: 0 }
   },
   isActive: {
     type: Boolean,
@@ -65,6 +83,10 @@ const gigSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  rating: {
+    average: { type: Number, default: 0 },
+    count: { type: Number, default: 0 }
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -73,31 +95,72 @@ const gigSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index for search functionality
-gigSchema.index({ title: 'text', description: 'text', tags: 'text' });
+// Text index for search functionality
+gigSchema.index({
+  title: 'text',
+  description: 'text',
+  tags: 'text',
+  category: 'text',
+  subcategory: 'text'
+});
+
+// Compound index for efficient filtering
+gigSchema.index({ category: 1, isActive: 1, price: 1 });
+gigSchema.index({ freelancer: 1, isActive: 1 });
 
 // Virtual for formatted price
 gigSchema.virtual('formattedPrice').get(function() {
   return `$${this.price}`;
 });
 
-// Virtual for formatted delivery time
-gigSchema.virtual('formattedDeliveryTime').get(function() {
-  if (this.deliveryTime === 1) {
-    return '1 day';
-  } else if (this.deliveryTime < 7) {
-    return `${this.deliveryTime} days`;
-  } else if (this.deliveryTime === 7) {
-    return '1 week';
-  } else {
-    const weeks = Math.floor(this.deliveryTime / 7);
-    const days = this.deliveryTime % 7;
-    if (days === 0) {
-      return `${weeks} week${weeks > 1 ? 's' : ''}`;
-    } else {
-      return `${weeks} week${weeks > 1 ? 's' : ''} ${days} day${days > 1 ? 's' : ''}`;
-    }
-  }
+// Virtual for delivery time in days
+gigSchema.virtual('deliveryTimeText').get(function() {
+  if (this.deliveryTime === 1) return '1 day';
+  if (this.deliveryTime < 7) return `${this.deliveryTime} days`;
+  if (this.deliveryTime < 30) return `${Math.ceil(this.deliveryTime / 7)} weeks`;
+  return `${Math.ceil(this.deliveryTime / 30)} months`;
 });
+
+// Method to increment views
+gigSchema.methods.incrementViews = function() {
+  this.views += 1;
+  return this.save();
+};
+
+// Method to increment orders
+gigSchema.methods.incrementOrders = function() {
+  this.orders += 1;
+  return this.save();
+};
+
+// Method to update rating
+gigSchema.methods.updateRating = function(newRating) {
+  const totalRating = this.rating.average * this.rating.count + newRating;
+  this.rating.count += 1;
+  this.rating.average = totalRating / this.rating.count;
+  return this.save();
+};
+
+// Static method to get popular gigs
+gigSchema.statics.getPopularGigs = function(limit = 10) {
+  return this.find({ isActive: true })
+    .sort({ views: -1, orders: -1 })
+    .limit(limit)
+    .populate('freelancer', 'username profile.firstName profile.lastName rating');
+};
+
+// Static method to get trending gigs
+gigSchema.statics.getTrendingGigs = function(limit = 10) {
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  
+  return this.find({ 
+    isActive: true, 
+    createdAt: { $gte: thirtyDaysAgo } 
+  })
+    .sort({ views: -1, orders: -1 })
+    .limit(limit)
+    .populate('freelancer', 'username profile.firstName profile.lastName rating');
+};
 
 module.exports = mongoose.model('Gig', gigSchema); 
