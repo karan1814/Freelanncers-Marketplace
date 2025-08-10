@@ -11,7 +11,7 @@
     "install-all": "npm install && cd server && npm install && cd ../client && npm install"
   },
   "keywords": ["freelancer", "marketplace", "react", "nodejs", "mongodb"],
-  "author": "Your Name",
+  "author": "Karan rathore",
   "license": "MIT",
   "devDependencies": {
     "concurrently": "^8.2.2"

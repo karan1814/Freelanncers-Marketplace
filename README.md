@@ -95,10 +95,10 @@ NODE_ENV=development
 ### 4. Start MongoDB
 Make sure MongoDB is running on your system:
 ```bash
-# On Windows
+# for windows 
 mongod
 
-# On macOS/Linux
+# for macOS/Linux
 sudo systemctl start mongod
 ```
 
