@@ -1,7 +1,7 @@
 const express = require('express');
 const Analytics = require('../models/Analytics');
 const User = require('../models/User');
-const Gig = require('./Gig');
+const Gig = require('../models/Gig');
 const Order = require('../models/Order');
 const Payment = require('../models/Payment');
 const { auth, authorizeRoles } = require('../middleware/auth');

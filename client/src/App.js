@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { Toaster } from 'react-hot-toast';
 import { Elements } from '@stripe/react-stripe-js';
@@ -44,63 +44,61 @@ function App() {
       <AuthProvider>
         <SocketProvider>
           <Elements stripe={stripePromise}>
-            <Router>
-              <div className="min-h-screen bg-gray-50">
-                <Navbar />
-                <main className="container mx-auto px-4 py-8">
-                  <Routes>
-                    {/* Public Routes */}
-                    <Route path="/" element={<Home />} />
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/register" element={<Register />} />
-                    <Route path="/gigs" element={<GigList />} />
-                    <Route path="/gigs/:id" element={<GigDetail />} />
+            <div className="min-h-screen bg-gray-50">
+              <Navbar />
+              <main className="container mx-auto px-4 py-8">
+                <Routes>
+                  {/* Public Routes */}
+                  <Route path="/" element={<Home />} />
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/register" element={<Register />} />
+                  <Route path="/gigs" element={<GigList />} />
+                  <Route path="/gigs/:id" element={<GigDetail />} />
 
-                    {/* Private Routes */}
-                    <Route
-                      path="/dashboard"
-                      element={
-                        <PrivateRoute>
-                          <Dashboard />
-                        </PrivateRoute>
-                      }
-                    />
-                    <Route
-                      path="/profile"
-                      element={
-                        <PrivateRoute>
-                          <Profile />
-                        </PrivateRoute>
-                      }
-                    />
-                    <Route
-                      path="/gigs/create"
-                      element={
-                        <PrivateRoute allowedRoles={['freelancer']}>
-                          <CreateGig />
-                        </PrivateRoute>
-                      }
-                    />
-                    <Route
-                      path="/gigs/:id/edit"
-                      element={
-                        <PrivateRoute allowedRoles={['freelancer']}>
-                          <EditGig />
-                        </PrivateRoute>
-                      }
-                    />
-                    <Route
-                      path="/orders/:id"
-                      element={
-                        <PrivateRoute>
-                          <OrderDetail />
-                        </PrivateRoute>
-                      }
-                    />
-                  </Routes>
-                </main>
-              </div>
-            </Router>
+                  {/* Private Routes */}
+                  <Route
+                    path="/dashboard"
+                    element={
+                      <PrivateRoute>
+                        <Dashboard />
+                      </PrivateRoute>
+                    }
+                  />
+                  <Route
+                    path="/profile"
+                    element={
+                      <PrivateRoute>
+                        <Profile />
+                      </PrivateRoute>
+                    }
+                  />
+                  <Route
+                    path="/gigs/create"
+                    element={
+                      <PrivateRoute allowedRoles={['freelancer']}>
+                        <CreateGig />
+                      </PrivateRoute>
+                    }
+                  />
+                  <Route
+                    path="/gigs/:id/edit"
+                    element={
+                      <PrivateRoute allowedRoles={['freelancer']}>
+                        <EditGig />
+                      </PrivateRoute>
+                    }
+                  />
+                  <Route
+                    path="/orders/:id"
+                    element={
+                      <PrivateRoute>
+                        <OrderDetail />
+                      </PrivateRoute>
+                    }
+                  />
+                </Routes>
+              </main>
+            </div>
             <Toaster
               position="top-right"
               toastOptions={{
