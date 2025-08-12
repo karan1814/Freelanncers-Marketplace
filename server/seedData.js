@@ -164,7 +164,67 @@ const freelancers = [
       location: 'Nashville, USA'
     },
     isVerified: true
-  }
+  },
+  {
+    username: 'oliverwright',
+    email: 'oliver.wright@email.com',
+    password: 'password123',
+    role: 'freelancer',
+    profile: {
+      firstName: 'Oliver',
+      lastName: 'Wright',
+      bio: 'DevOps engineer with expertise in cloud infrastructure and CI/CD pipelines.',
+      skills: ['DevOps', 'AWS', 'Docker', 'Kubernetes'],
+      hourlyRate: 60,
+      location: 'Boston, USA'
+    },
+    isVerified: true
+  },
+  {
+    username: 'chloemoore',
+    email: 'chloe.moore@email.com',
+    password: 'password123',
+    role: 'freelancer',
+    profile: {
+      firstName: 'Chloe',
+      lastName: 'Moore',
+      bio: 'UI/UX designer passionate about creating intuitive digital experiences.',
+      skills: ['UI/UX', 'Figma', 'Sketch', 'Prototyping'],
+      hourlyRate: 38,
+      location: 'Portland, USA'
+    },
+    isVerified: true
+  },
+  {
+    username: 'ethanmartin',
+    email: 'ethan.martin@email.com',
+    password: 'password123',
+    role: 'freelancer',
+    profile: {
+      firstName: 'Ethan',
+      lastName: 'Martin',
+      bio: 'Backend developer specializing in scalable APIs and microservices.',
+      skills: ['Node.js', 'Express', 'MongoDB', 'Microservices'],
+      hourlyRate: 48,
+      location: 'Dallas, USA'
+    },
+    isVerified: true
+  },
+  {
+    username: 'zoewalker',
+    email: 'zoe.walker@email.com',
+    password: 'password123',
+    role: 'freelancer',
+    profile: {
+      firstName: 'Zoe',
+      lastName: 'Walker',
+      bio: 'Social media strategist with a knack for viral campaigns.',
+      skills: ['Social Media', 'Content Creation', 'Analytics', 'Influencer Marketing'],
+      hourlyRate: 32,
+      location: 'Atlanta, USA'
+    },
+    isVerified: true
+  },
 ];
 
 const clients = [
